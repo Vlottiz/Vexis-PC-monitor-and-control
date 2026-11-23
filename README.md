@@ -33,12 +33,17 @@ Most PCs end up with three or four vendor apps just to see temperatures, set fan
 
 ## Screenshots
 
-> Screenshots show the real interface with sample readings.
+> Real screenshots from a Ryzen 9 9950X3D with a Radeon RX 7900 XT.
 
 | Performance | Thread Viewer |
 |---|---|
 | ![Performance](docs/screenshots/performance.png) | ![Thread Viewer](docs/screenshots/thread-viewer.png) |
 | **Per-core clocks with threads in use, CCD groups, thermals** | **Every hardware thread: live map, activity timeline, core table** |
+
+| Performance with sparklines | Thread Viewer under full load |
+|---|---|
+| ![Performance with sparklines](docs/screenshots/performance-sparklines.png) | ![Thread Viewer under load](docs/screenshots/thread-viewer-load.png) |
+| **Clock history under every core, side panels with key stats** | **All 32 threads busy, shown live on the map and timeline** |
 
 | GPU | Processes |
 |---|---|
@@ -65,9 +70,15 @@ Most PCs end up with three or four vendor apps just to see temperatures, set fan
 | ![CSV recording](docs/screenshots/csv-recording.png) | ![Update log](docs/screenshots/update-log.png) |
 | **Record what you choose; built-in viewer with charts** | **Update check and what changed in your version** |
 
-| Settings | |
+| Settings | Themes |
 |---|---|
-| ![Settings](docs/screenshots/settings.png) | **Text scaling, start with Windows, automatic updates, temperature alerts** |
+| ![Settings](docs/screenshots/settings.png) | ![Themes](docs/screenshots/themes.png) |
+| **Text scaling, start with Windows, automatic updates, temperature alerts** | **Quick theme presets and three saved colour profiles** |
+
+| Colours | Ghost theme |
+|---|---|
+| ![Colours](docs/screenshots/colours.png) | ![Home in the Ghost theme](docs/screenshots/home-ghost.png) |
+| **Change any colour in the app, one at a time** | **The Home page in the Ghost theme** |
 
 ---
 
