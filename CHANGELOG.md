@@ -9,6 +9,10 @@ for the installed version on Info → Version, and the release workflow uses it 
 the GitHub release notes.
 -->
 
+## 2.14.1 — 2026-11-25
+- RGB: keyboards that OpenRGB lists twice (one keyboard on two USB connections, e.g. Cherry MX Board 3.0S) show as one card, and Vexis sends every change to both. Before, one entry kept re-sending its colours every 2 s and pulled the keyboard out of its animation, so lighting worked only half the time
+- RGB: picking a colour while a device runs a built-in animation that takes a colour (Wave, Ripples, Breathing…) now changes that animation's colour instead of stopping it. Pick Custom for a solid colour
+
 ## 2.14.0 — 2026-10-18
 - Windows: title bars are dark and use the theme's colours (main window and popped-out windows) instead of white; on Windows 10 they go dark but can't take the exact colour
 - Pages: one font and one text-size scale on every page — headers, subtitles, section titles, labels and values now match everywhere
