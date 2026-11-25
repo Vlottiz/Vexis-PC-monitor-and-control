@@ -18,7 +18,7 @@ public class PageHandlerTests
         ["nav.js"]         = new[] { "file", "i", "key", "s", "p.id" },               // built-in page list, colour keys, slot numbers
         ["processes.html"] = new[] { "Number(p.pid) | 0", "k" },                      // number; column key
         ["record.html"]    = new[] { "i" },
-        ["rgb.html"]       = new[] { "a.id", "c", "cnt", "i", "isR?'applyRAM':'setDC'", "li", "mi" },
+        ["rgb.html"]       = new[] { "a.id", "c", "cnt", "i", "isR?'applyRAM':'devColor'", "li", "mi" },
         ["storage.html"]   = new[] { "i" },
         ["threads.html"]   = new[] { "c.key" },
     };
