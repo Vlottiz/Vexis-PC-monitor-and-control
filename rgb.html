@@ -201,6 +201,29 @@ async function orgbPut(p,b){
   if(m&&m[2]==='leds'&&Array.isArray(b)){const i=+m[1];_last[i]={p,b};b=b.map(c=>dim(c,i));}
   else if(m&&m[2]==='mode'&&b&&b.r!=null){const i=+m[1];_last[i]={p,b};b={...b,...dim(b,i)};}
   await orgbCall('PUT',p,JSON.stringify(b));
+  if(m)await mirrorTwins(+m[1],m[2],JSON.stringify(b));
+}
+// ── One keyboard, two OpenRGB entries ────────────────────────────────────────
+// Some keyboards (e.g. Cherry MX Board 3.0S) are listed twice by OpenRGB: one device
+// reached through two USB (HID) interfaces. Treated as two devices, one card could set
+// an animation while the other kept re-sending its fixed colours every 2 s, pulling the
+// keyboard back ("works half the time"). Vexis shows one card and sends every write to
+// both entries. Same name, type, LED count and serial, both HID with the same USB ids.
+function usbIds(d){const m=/vid_([0-9a-f]{4}).*?pid_([0-9a-f]{4})/i.exec(d?.location||'');return m&&/^HID/i.test(d.location)?(m[1]+':'+m[2]).toLowerCase():null;}
+function markTwins(){
+  _devices.forEach(d=>{if(d){delete d._twinOf;d._twins=[];}});
+  for(let i=0;i<_devices.length;i++){
+    const a=_devices[i];if(!a||a._twinOf!=null||isRam(i))continue;
+    const ua=usbIds(a);if(!ua)continue;
+    for(let j=i+1;j<_devices.length;j++){
+      const b=_devices[j];
+      if(!b||b._twinOf!=null||b.name!==a.name||b.type!==a.type||ledCnt(j)!==ledCnt(i)||(b.serial||'')!==(a.serial||'')||usbIds(b)!==ua)continue;
+      b._twinOf=i;a._twins.push(j);
+    }
+  }
+}
+async function mirrorTwins(i,what,body){
+  for(const j of _devices[i]?._twins||[]){try{await orgbCall('PUT','/devices/'+j+'/'+what,body);}catch(e){}}
 }
 // Hardware mode picked from a device's mode chips (null = Vexis is sending colours)
 const _hwMode={};
@@ -265,7 +288,7 @@ function colorModeIdx(d){                 // mode that takes a single colour
   if(i<0)i=ms.findIndex(m=>m.color_mode===2);
   return i;
 }
-function supportsColor(d){return !!d&&!d.skip&&((d.per_led&&d.num_leds>0)||colorModeIdx(d)>=0);}
+function supportsColor(d){return !!d&&!d.skip&&d._twinOf==null&&((d.per_led&&d.num_leds>0)||colorModeIdx(d)>=0);}
 // Released devices are left alone by everything: apply-all, looks, effects, brightness, RAM sync
 function canColor(d){return supportsColor(d)&&!isReleasedDev(d);}
 async function ensureDirect(devIdx){
@@ -356,6 +379,22 @@ async function setDC(devIdx,leds,hex){
     if(mi>=0){await orgbPut('/devices/'+devIdx+'/mode',{mode:mi,r:c.r,g:c.g,b:c.b});updateModeChips(devIdx,mi);}
   }
   if(hex){const{r,g,b}=hexRgb(hex);_lc[devIdx]=new Array(leds.length).fill(null).map(()=>({r,g,b}));if(_exp.has(devIdx))renderGrid(devIdx);}
+}
+// The device's own colour picker. If a built-in animation that takes a colour is running
+// (e.g. a keyboard's Wave or Ripples), the colour goes to that animation instead of
+// stopping it and switching the device back to Custom. Pick the Custom chip for a solid colour.
+async function devColor(i,leds,hex){
+  const mi=_hwMode[i],m=mi!=null?_devices[i]?.modes?.[mi]:null;
+  if(m&&m.color_mode===2&&hex&&!isReleasedDev(_devices[i])){
+    const c=hexRgb(hex),br=hwModeBright(i,mi);
+    // With hardware brightness the colour goes full strength and brightness does the dimming
+    const body=br!=null?JSON.stringify({mode:mi,r:c.r,g:c.g,b:c.b,brightness:br}):null;
+    if(body){await orgbCall('PUT','/devices/'+i+'/mode',body);await mirrorTwins(i,'mode',body);}
+    else await orgbPut('/devices/'+i+'/mode',{mode:mi,r:c.r,g:c.g,b:c.b});
+    _hwMode[i]=mi;
+    return;
+  }
+  return setDC(i,leds,hex);
 }
 let _aTimer=null,_aPend=null;
 function applyAllColor(hex){if(!_connected)return;_aPend=hex;clearTimeout(_aTimer);_aTimer=setTimeout(async()=>{const h=_aPend;if(!h)return;_aPend=null;const{r,g,b}=hexRgb(h);for(let i=0;i<_devices.length;i++){const d=_devices[i];if(!canColor(d))continue;try{await setDC(i,new Array(ledCnt(i)).fill({r,g,b}),h);}catch(e){}}},300);}
@@ -561,7 +600,7 @@ async function releaseDev(i,modeIdx){
   if(_devAnim[i])stopDevAnim(i);
   clearHold(i);delete _last[i];_modeReady[i]=false;
   // Hand it back before marking it released (orgbPut would still allow it now)
-  if(modeIdx>=0&&_connected){try{await orgbCall('PUT','/devices/'+i+'/mode',JSON.stringify({mode:modeIdx}));_hwMode[i]=modeIdx;}catch(e){}}
+  if(modeIdx>=0&&_connected){try{const b=JSON.stringify({mode:modeIdx});await orgbCall('PUT','/devices/'+i+'/mode',b);await mirrorTwins(i,'mode',b);_hwMode[i]=modeIdx;}catch(e){}}
   const list=releasedList().filter(r=>r.uid!==devUid(d));
   list.push({uid:devUid(d),name:d.name||'',mode:modeIdx>=0?(d.modes?.[modeIdx]?.name||''):''});
   navSaveSetting('rgbReleased',JSON.stringify(list));
@@ -692,13 +731,14 @@ function autoApplyLook(){
 // ── Render ───────────────────────────────────────────────────────────────────
 function buildQC(){document.getElementById('quick-colors').innerHTML=QCOLS.map(({c,l})=>`<div class="qcol" style="background:${c}" title="${l}" onclick="applyAllColor('${c}');document.getElementById('custom-color').value='${c}'"></div>`).join('');}
 
-function updateDevCount(){const sub=document.getElementById('rgb-sub');if(!sub||!_connected)return;const a=_devices.filter(canColor).length,r=_devices.filter(isReleasedDev).length;sub.textContent=`${a} active${r?` · ${r} released`:''} (${_devices.length} total)`;}
+function updateDevCount(){const sub=document.getElementById('rgb-sub');if(!sub||!_connected)return;const a=_devices.filter(canColor).length,r=_devices.filter(isReleasedDev).length,n=_devices.filter(d=>d._twinOf==null).length;sub.textContent=`${a} active${r?` · ${r} released`:''} (${n} total)`;}
 // One card per OpenRGB device: modes, colours, painter. Device names come from OpenRGB,
 // so they're escaped before going into the page
 function renderDevices(){
   const list=document.getElementById('device-list');if(!_devices.length){list.innerHTML='';return;}
   updateDevCount();
   list.innerHTML=_devices.map((d,i)=>{
+    if(d._twinOf!=null)return'';                                  // shown on its twin's card
     if(isReleasedDev(d))return releasedCard(d,i);
     if(!supportsColor(d))return`<div class="card device-card" id="dev-${i}" style="opacity:.4"><div class="card-header"><span class="card-title">${escH(d.name||'Device '+i)}</span><span class="badge badge-warn">UNSUPPORTED</span></div></div>`;
     const cnt=ledCnt(i),isR=isRam(i);
@@ -708,7 +748,7 @@ function renderDevices(){
       <div class="card-header">
         <span class="card-title">${escH(d.name||'Device '+i)}</span>
         <div style="display:flex;align-items:center;gap:6px">
-          <span class="badge badge-dim">${cnt} LED${cnt!==1?'s':''}</span>
+          <span class="badge badge-dim">${cnt} LED${cnt!==1?'s':''}</span>${d._twins?.length?`<span class="badge badge-dim" title="OpenRGB lists this device ${d._twins.length+1} times (one per USB connection). Vexis controls them together.">&#xD7;${d._twins.length+1}</span>`:''}
           <button class="rel-btn" onclick="askRelease(${i})" title="Stop Vexis controlling this device and hand it back to its own lighting (or its own software)">&#x23CF; RELEASE</button>
         </div>
       </div>
@@ -717,8 +757,8 @@ function renderDevices(){
       ${modeChips?`<div class="mode-row" id="dev-modes-${i}">${modeChips}</div>`:''}
       <div class="cprow">
         <label>APPLY ALL LEDS</label>
-        <input type="color" class="bp" id="dev-col-${i}" value="${cHex}" oninput="clearTimeout(this._t);this._t=setTimeout(()=>${isR?'applyRAM':'setDC'}(${i},new Array(${cnt}).fill(hexRgb(this.value)),this.value),200)">
-        <button class="btn btn-primary" onclick="${isR?'applyRAM':'setDC'}(${i},new Array(${cnt}).fill(hexRgb(document.getElementById('dev-col-${i}').value)),document.getElementById('dev-col-${i}').value)" style="padding:5px 10px">APPLY</button>
+        <input type="color" class="bp" id="dev-col-${i}" value="${cHex}" oninput="clearTimeout(this._t);this._t=setTimeout(()=>${isR?'applyRAM':'devColor'}(${i},new Array(${cnt}).fill(hexRgb(this.value)),this.value),200)">
+        <button class="btn btn-primary" onclick="${isR?'applyRAM':'devColor'}(${i},new Array(${cnt}).fill(hexRgb(document.getElementById('dev-col-${i}').value)),document.getElementById('dev-col-${i}').value)" style="padding:5px 10px">APPLY</button>
       </div>
       <div class="cprow">
         <label style="flex:0 0 auto" title="On top of the master slider. Built-in hardware modes follow it only if the device supports brightness.">BRIGHTNESS</label>
@@ -855,6 +895,7 @@ async function connSilent(){
     _devices=await orgbGet('/devices');
     for(const k in _modeReady)delete _modeReady[k]; // fresh list/connection: set modes again
     if(!Array.isArray(_devices))throw new Error('Bad response');
+    markTwins();
     // Keep polling until device count is non-zero AND stable across two polls.
     // OpenRGB registers devices over 1-2s so we may catch it mid-scan.
     if(_devices.length===0){setStatus('offline','Detecting devices...');_lastDevCount=-1;return;}
